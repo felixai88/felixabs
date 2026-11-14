@@ -141,11 +141,11 @@ $("bOut").onclick=function(){logout(false)};
 /* ---- start ---- */
 function start(){
   $("v-login").hidden=true;$("v-app").hidden=false;
-  $("hNama").textContent=S.user.nama;$("hPeran").textContent=(S.user.peran==="admin"?"Admin":"Karyawan")+" · NIK "+S.user.nik;
+  $("hNama").textContent=S.user.nama;$("hPeran").textContent=(S.user.peran==="admin"?"Admin":"Karyawan")+" · NIK "+S.user.nik+" · v4";
   var tabs=[["absen","Absen"]];if(S.user.peran==="admin")tabs.push(["rekap","Rekap"],["kary","Karyawan"],["titik","Titik kantor"]);
   $("nav").innerHTML="";tabs.forEach(function(t){var b=document.createElement("button");b.textContent=t[1];b.dataset.k=t[0];b.onclick=function(){tab(t[0])};$("nav").appendChild(b)});
   $("nav").hidden=tabs.length<2;tab("absen");
-  call("titik").then(function(j){S.titik=j.titik;S.maxAcc=Number(j.maxAkurasi)||100;drawMap();render()}).catch(fail);
+  call("titik").then(function(j){S.titik=j.titik;var m=Number(j.maxAkurasi);S.maxAcc=m>=50?m:100;drawMap();render()}).catch(fail);
   riwayat();watch();
 }
 function tab(k){["absen","rekap","kary","titik"].forEach(function(x){$("p-"+x).hidden=x!==k});
@@ -172,7 +172,7 @@ function render(){
   if(!S.titik.length){btn.disabled=true;return}
   if(!S.pos){btn.disabled=true;return}
   var n=null;S.titik.forEach(function(t){var d=hav(S.pos.lat,S.pos.lng,t.lat,t.lng);if(!n||d<n.d)n={t:t,d:d}});
-  $("dist").textContent=fm(n.d);$("near").textContent=n.t.nama+" · radius "+n.t.radius+" m · akurasi GPS ±"+Math.round(S.pos.acc)+" m";
+  $("dist").textContent=fm(n.d);$("near").textContent=n.t.nama+" · radius "+n.t.radius+" m · akurasi GPS ±"+Math.round(S.pos.acc)+" m (batas ±"+S.maxAcc+" m)";
   var inside=n.d<=n.t.radius,acc=S.pos.acc<=S.maxAcc;
   if(!acc){st.className="st bad";st.innerHTML="Sinyal GPS kurang akurat<small>Pindah ke area terbuka dan tunggu beberapa detik.</small>"}
   else if(inside){st.className="st ok";st.innerHTML="Anda berada di area "+esc(n.t.nama)+"<small>Absen sudah bisa dilakukan.</small>"}
