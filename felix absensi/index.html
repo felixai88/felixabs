@@ -42,6 +42,9 @@ li span{display:block;color:var(--mu);font-size:.8rem}
 .row{display:flex;gap:8px}.row>*{flex:1}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;z-index:2000}
 .modal video,.modal img{max-width:100%;max-height:68vh;border-radius:12px;background:#000}
+.ci{display:flex;gap:10px;background:var(--sf);color:var(--ink);border-radius:12px;padding:10px;max-width:360px;width:100%;font-size:.78rem;line-height:1.4}
+.ci canvas{width:88px;height:88px;border-radius:8px;flex:none;background:var(--ln)}.ci b{font-size:.85rem}
+.modal video{max-height:46vh}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:.88rem;z-index:2100;max-width:90%}
 [hidden]{display:none!important}
 </style>
@@ -108,7 +111,11 @@ li span{display:block;color:var(--mu);font-size:.8rem}
 </main>
 
 <div id="cam" class="modal" hidden><video id="vid" autoplay playsinline muted></video>
-  <div class="row" style="max-width:360px;width:100%"><button class="b2" id="bBatal">Batal</button><button class="b" id="bSnap" style="margin:0">Ambil foto dan absen</button></div></div>
+  <div class="ci"><canvas id="mm" width="200" height="200"></canvas><div id="ct"></div></div>
+  <div class="row" style="max-width:360px;width:100%"><button class="b2" id="bBatal">Batal</button><button class="b" id="bSnap" style="margin:0">Ambil foto</button></div></div>
+<div id="prev" class="modal" hidden><div style="color:#fff;font-weight:600">Periksa foto sebelum dikirim</div><img id="pimg" alt="Pratinjau foto absen">
+  <div class="row" style="max-width:360px;width:100%"><button class="b2" id="bUlang">Ulangi foto</button><button class="b" id="bKirim" style="margin:0">✓ Kirim absen</button></div>
+  <button class="b2" id="bBatal2">Batal</button></div>
 <div id="pic" class="modal" hidden><img id="img" alt="Foto absen"><button class="b2" id="bTutup">Tutup</button></div>
 <div id="toast" hidden></div>
 
@@ -141,7 +148,7 @@ $("bOut").onclick=function(){logout(false)};
 /* ---- start ---- */
 function start(){
   $("v-login").hidden=true;$("v-app").hidden=false;
-  $("hNama").textContent=S.user.nama;$("hPeran").textContent=(S.user.peran==="admin"?"Admin":"Karyawan")+" · NIK "+S.user.nik+" · v5";
+  $("hNama").textContent=S.user.nama;$("hPeran").textContent=(S.user.peran==="admin"?"Admin":"Karyawan")+" · NIK "+S.user.nik+" · v6";
   var tabs=[["absen","Absen"]];if(S.user.peran==="admin")tabs.push(["rekap","Rekap"],["kary","Karyawan"],["titik","Titik kantor"]);
   $("nav").innerHTML="";tabs.forEach(function(t){var b=document.createElement("button");b.textContent=t[1];b.dataset.k=t[0];b.onclick=function(){tab(t[0])};$("nav").appendChild(b)});
   $("nav").hidden=tabs.length<2;tab("absen");
@@ -180,12 +187,23 @@ function render(){
   btn.disabled=!(inside&&acc)}
 
 /* ---- absen dengan selfie ---- */
-$("bAbsen").onclick=function(){
+function nearest(){var n=null;if(S.pos)S.titik.forEach(function(t){var d=hav(S.pos.lat,S.pos.lng,t.lat,t.lng);if(!n||d<n.d)n={t:t,d:d}});return n}
+function camInfo(){
+  var n=nearest(),P=S.pos;if(!P)return;
+  var h=function(a){return"<div><b>"+esc(n?n.t.nama:"Lokasi Anda")+"</b></div><div>"+(n?"Jarak "+Math.round(n.d)+" m (radius "+n.t.radius+" m)<br>":"")+P.lat.toFixed(6)+", "+P.lng.toFixed(6)+" (±"+Math.round(P.acc)+" m)</div><div class='mu' style='font-size:.74rem'>"+esc(a)+"</div>"};
+  $("ct").innerHTML=h("Mencari alamat…");
+  alamat(P.lat,P.lng).then(function(a){$("ct").innerHTML=h(a||"Alamat tidak tersedia")});
+  var g=$("mm").getContext("2d");g.clearRect(0,0,200,200);
+  Promise.race([miniMap(P.lat,P.lng),new Promise(function(r){setTimeout(function(){r(null)},4500)})]).then(function(m){
+    if(!m)return;g.drawImage(m,0,0,200,200);g.fillStyle="#e11d48";g.beginPath();g.arc(100,92,9,0,7);g.fill();g.beginPath();g.moveTo(92,96);g.lineTo(108,96);g.lineTo(100,112);g.fill()})}
+function openCam(){
   if(!navigator.mediaDevices){toast("Kamera tidak tersedia. Buka lewat HTTPS.");return}
   navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:640}},audio:false}).then(function(s){
-    S.stream=s;$("vid").srcObject=s;$("cam").hidden=false}).catch(function(){toast("Izin kamera diperlukan untuk absen.")})};
+    S.stream=s;$("vid").srcObject=s;$("cam").hidden=false;camInfo()}).catch(function(){toast("Izin kamera diperlukan untuk absen.")})}
+$("bAbsen").onclick=openCam;
 function stopCam(){if(S.stream){S.stream.getTracks().forEach(function(t){t.stop()});S.stream=null}$("cam").hidden=true}
 $("bBatal").onclick=stopCam;
+
 /* ---- cap lokasi pada foto ---- */
 function tile(z,x,y){return new Promise(function(res){var i=new Image();i.crossOrigin="anonymous";i.onload=function(){res(i)};i.onerror=function(){res(null)};i.src="https://tile.openstreetmap.org/"+z+"/"+x+"/"+y+".png"})}
 function miniMap(lat,lng){var z=17,n=Math.pow(2,z),xf=(lng+180)/360*n,la=lat*Math.PI/180,yf=(1-Math.log(Math.tan(la)+1/Math.cos(la))/Math.PI)/2*n,x0=Math.floor(xf),y0=Math.floor(yf),jobs=[];
@@ -220,9 +238,17 @@ $("bSnap").onclick=function(){
   stopCam();toast("Mengambil lokasi…");
   navigator.geolocation.getCurrentPosition(function(p){
     var P={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy};toast("Menyiapkan foto…");
-    stamp(c,P).then(function(foto){toast("Mengirim absen…");return call("absen",{lat:P.lat,lng:P.lng,akurasi:P.acc,foto:foto,perangkat:navigator.userAgent})}).then(function(j){
-      toast("Absen "+j.jenis.toLowerCase()+" tercatat: "+j.waktu+" WIB");riwayat()}).catch(fail)},
+    stamp(c,P).then(function(foto){S.pending={foto:foto,P:P,t:Date.now()};$("pimg").src=foto;$("prev").hidden=false;$("toast").hidden=true}).catch(fail)},
     function(){toast("Lokasi tidak bisa diambil. Coba lagi.")},{enableHighAccuracy:true,timeout:15000,maximumAge:0})};
+function tutupPrev(){S.pending=null;$("prev").hidden=true}
+$("bBatal2").onclick=tutupPrev;
+$("bUlang").onclick=function(){tutupPrev();openCam()};
+$("bKirim").onclick=function(){
+  var q=S.pending,b=this;if(!q)return;
+  if(Date.now()-q.t>180000){toast("Foto sudah lebih dari 3 menit. Silakan ambil ulang.");tutupPrev();openCam();return}
+  b.disabled=true;b.textContent="Mengirim…";
+  call("absen",{lat:q.P.lat,lng:q.P.lng,akurasi:q.P.acc,foto:q.foto,perangkat:navigator.userAgent}).then(function(j){
+    tutupPrev();toast("Absen "+j.jenis.toLowerCase()+" tercatat: "+j.waktu+" WIB");riwayat()}).catch(fail).then(function(){b.disabled=false;b.textContent="✓ Kirim absen"})};
 function riwayat(){call("riwayatSaya").then(function(j){var u=$("riw");u.innerHTML=j.riwayat.length?"":'<li class="mu">Belum ada absen.</li>';
   j.riwayat.forEach(function(r){u.insertAdjacentHTML("beforeend","<li><div><b class='"+(r.jenis==="Masuk"?"in":"out")+"'>"+esc(r.jenis)+"</b><span>"+esc(r.waktu)+" WIB</span></div><span>"+esc(r.jarak)+" m dari titik</span></li>")})}).catch(function(){})}
 
