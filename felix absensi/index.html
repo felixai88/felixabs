@@ -145,7 +145,7 @@ function start(){
   var tabs=[["absen","Absen"]];if(S.user.peran==="admin")tabs.push(["rekap","Rekap"],["kary","Karyawan"],["titik","Titik kantor"]);
   $("nav").innerHTML="";tabs.forEach(function(t){var b=document.createElement("button");b.textContent=t[1];b.dataset.k=t[0];b.onclick=function(){tab(t[0])};$("nav").appendChild(b)});
   $("nav").hidden=tabs.length<2;tab("absen");
-  call("titik").then(function(j){S.titik=j.titik;S.maxAcc=j.maxAkurasi;drawMap();render()}).catch(fail);
+  call("titik").then(function(j){S.titik=j.titik;S.maxAcc=Number(j.maxAkurasi)||100;drawMap();render()}).catch(fail);
   riwayat();watch();
 }
 function tab(k){["absen","rekap","kary","titik"].forEach(function(x){$("p-"+x).hidden=x!==k});
