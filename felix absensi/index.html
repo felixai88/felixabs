@@ -40,9 +40,9 @@ li{display:flex;justify-content:space-between;gap:8px;align-items:center;padding
 li span{display:block;color:var(--mu);font-size:.8rem}
 .in{color:var(--ok);font-weight:800}.out{color:var(--bad);font-weight:800}
 .row{display:flex;gap:8px}.row>*{flex:1}
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;z-index:9}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;z-index:2000}
 .modal video,.modal img{max-width:100%;max-height:68vh;border-radius:12px;background:#000}
-#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:.88rem;z-index:20;max-width:90%}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:.88rem;z-index:2100;max-width:90%}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -141,11 +141,11 @@ $("bOut").onclick=function(){logout(false)};
 /* ---- start ---- */
 function start(){
   $("v-login").hidden=true;$("v-app").hidden=false;
-  $("hNama").textContent=S.user.nama;$("hPeran").textContent=(S.user.peran==="admin"?"Admin":"Karyawan")+" · NIK "+S.user.nik+" · v4";
+  $("hNama").textContent=S.user.nama;$("hPeran").textContent=(S.user.peran==="admin"?"Admin":"Karyawan")+" · NIK "+S.user.nik+" · v5";
   var tabs=[["absen","Absen"]];if(S.user.peran==="admin")tabs.push(["rekap","Rekap"],["kary","Karyawan"],["titik","Titik kantor"]);
   $("nav").innerHTML="";tabs.forEach(function(t){var b=document.createElement("button");b.textContent=t[1];b.dataset.k=t[0];b.onclick=function(){tab(t[0])};$("nav").appendChild(b)});
   $("nav").hidden=tabs.length<2;tab("absen");
-  call("titik").then(function(j){S.titik=j.titik;var m=Number(j.maxAkurasi);S.maxAcc=m>=50?m:100;drawMap();render()}).catch(fail);
+  call("titik").then(function(j){S.titik=j.titik;var m=Number(j.maxAkurasi);S.maxAcc=m>=50?m:100;S.off=j.sekarang?Number(j.sekarang)-Date.now():0;drawMap();render()}).catch(fail);
   riwayat();watch();
 }
 function tab(k){["absen","rekap","kary","titik"].forEach(function(x){$("p-"+x).hidden=x!==k});
@@ -186,12 +186,41 @@ $("bAbsen").onclick=function(){
     S.stream=s;$("vid").srcObject=s;$("cam").hidden=false}).catch(function(){toast("Izin kamera diperlukan untuk absen.")})};
 function stopCam(){if(S.stream){S.stream.getTracks().forEach(function(t){t.stop()});S.stream=null}$("cam").hidden=true}
 $("bBatal").onclick=stopCam;
+/* ---- cap lokasi pada foto ---- */
+function tile(z,x,y){return new Promise(function(res){var i=new Image();i.crossOrigin="anonymous";i.onload=function(){res(i)};i.onerror=function(){res(null)};i.src="https://tile.openstreetmap.org/"+z+"/"+x+"/"+y+".png"})}
+function miniMap(lat,lng){var z=17,n=Math.pow(2,z),xf=(lng+180)/360*n,la=lat*Math.PI/180,yf=(1-Math.log(Math.tan(la)+1/Math.cos(la))/Math.PI)/2*n,x0=Math.floor(xf),y0=Math.floor(yf),jobs=[];
+  for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++)(function(dx,dy){jobs.push(tile(z,x0+dx,y0+dy).then(function(im){return{im:im,dx:dx,dy:dy}}))})(dx,dy);
+  return Promise.all(jobs).then(function(r){var c=document.createElement("canvas");c.width=c.height=768;var g=c.getContext("2d"),ok=false;
+    r.forEach(function(t){if(t.im){ok=true;g.drawImage(t.im,(t.dx+1)*256,(t.dy+1)*256)}});if(!ok)return null;
+    var px=(xf-x0+1)*256,py=(yf-y0+1)*256,o=document.createElement("canvas");o.width=o.height=200;o.getContext("2d").drawImage(c,px-100,py-100,200,200,0,0,200,200);return o})}
+function alamat(lat,lng){var ac=new AbortController(),t=setTimeout(function(){ac.abort()},3500);
+  return fetch("https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&accept-language=id&lat="+lat+"&lon="+lng,{signal:ac.signal}).then(function(r){return r.json()}).then(function(j){clearTimeout(t);return j.display_name||""}).catch(function(){clearTimeout(t);return ""})}
+function stamp(c,P){
+  var n=null;S.titik.forEach(function(t){var d=hav(P.lat,P.lng,t.lat,t.lng);if(!n||d<n.d)n={t:t,d:d}});
+  var tm=function(p){return Promise.race([p,new Promise(function(r){setTimeout(function(){r(null)},4500)})])};
+  return Promise.all([tm(miniMap(P.lat,P.lng)),alamat(P.lat,P.lng)]).then(function(r){
+    var g=c.getContext("2d"),W=c.width,H=c.height,bh=150,gr=g.createLinearGradient(0,H-bh-20,0,H);
+    gr.addColorStop(0,"rgba(0,0,0,0)");gr.addColorStop(.25,"rgba(0,0,0,.6)");gr.addColorStop(1,"rgba(0,0,0,.78)");
+    g.fillStyle=gr;g.fillRect(0,H-bh-20,W,bh+20);
+    var x=14,m=r[0];
+    if(m){var s=120,y=H-s-14;g.drawImage(m,x,y,s,s);g.strokeStyle="#fff";g.lineWidth=2;g.strokeRect(x,y,s,s);
+      g.fillStyle="#e11d48";g.beginPath();g.arc(x+s/2,y+s/2-8,6,0,7);g.fill();g.beginPath();g.moveTo(x+s/2-5,y+s/2-5);g.lineTo(x+s/2+5,y+s/2-5);g.lineTo(x+s/2,y+s/2+4);g.fill();x+=s+12}
+    var d=new Date(Date.now()+(S.off||0)),tx=d.toLocaleString("id-ID",{timeZone:"Asia/Jakarta",day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false})+" WIB";
+    var L=[[tx,"bold 17px sans-serif",24],[S.user.nama+" · NIK "+S.user.nik,"bold 14px sans-serif",20],[P.lat.toFixed(6)+", "+P.lng.toFixed(6)+" (±"+Math.round(P.acc)+" m)","14px sans-serif",20]];
+    if(n)L.push([n.t.nama+" · "+Math.round(n.d)+" m dari titik","14px sans-serif",20]);
+    g.fillStyle="#fff";g.textBaseline="top";g.shadowColor="rgba(0,0,0,.85)";g.shadowBlur=3;
+    var y2=H-bh+8;L.forEach(function(l){g.font=l[1];g.fillText(l[0],x,y2);y2+=l[2]});
+    g.font="12px sans-serif";var w=(r[1]||"").split(" "),ln="",k=0;
+    for(var i=0;i<w.length&&k<2;i++){var t=ln?ln+" "+w[i]:w[i];if(g.measureText(t).width>W-x-12){g.fillText(ln,x,y2);y2+=16;k++;ln=w[i]}else ln=t}
+    if(k<2&&ln)g.fillText(ln,x,y2);
+    return c.toDataURL("image/jpeg",.78)})}
 $("bSnap").onclick=function(){
   var v=$("vid");if(!v.videoWidth){toast("Kamera belum siap.");return}
-  var w=480,h=Math.round(v.videoHeight*w/v.videoWidth),c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(v,0,0,w,h);
-  var foto=c.toDataURL("image/jpeg",.7);stopCam();toast("Mengirim absen…");
+  var w=640,h=Math.round(v.videoHeight*w/v.videoWidth),c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(v,0,0,w,h);
+  stopCam();toast("Mengambil lokasi…");
   navigator.geolocation.getCurrentPosition(function(p){
-    call("absen",{lat:p.coords.latitude,lng:p.coords.longitude,akurasi:p.coords.accuracy,foto:foto,perangkat:navigator.userAgent}).then(function(j){
+    var P={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy};toast("Menyiapkan foto…");
+    stamp(c,P).then(function(foto){toast("Mengirim absen…");return call("absen",{lat:P.lat,lng:P.lng,akurasi:P.acc,foto:foto,perangkat:navigator.userAgent})}).then(function(j){
       toast("Absen "+j.jenis.toLowerCase()+" tercatat: "+j.waktu+" WIB");riwayat()}).catch(fail)},
     function(){toast("Lokasi tidak bisa diambil. Coba lagi.")},{enableHighAccuracy:true,timeout:15000,maximumAge:0})};
 function riwayat(){call("riwayatSaya").then(function(j){var u=$("riw");u.innerHTML=j.riwayat.length?"":'<li class="mu">Belum ada absen.</li>';
