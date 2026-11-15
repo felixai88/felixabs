@@ -44,7 +44,8 @@ li span{display:block;color:var(--mu);font-size:.8rem}
 .modal video,.modal img{max-width:100%;max-height:68vh;border-radius:12px;background:#000}
 .ci{display:flex;gap:10px;background:var(--sf);color:var(--ink);border-radius:12px;padding:10px;max-width:360px;width:100%;font-size:.78rem;line-height:1.4}
 .ci canvas{width:88px;height:88px;border-radius:8px;flex:none;background:var(--ln)}.ci b{font-size:.85rem}
-.modal video{max-height:46vh}
+.modal{overflow-y:auto}.modal video{max-height:36vh}
+.fs{max-width:360px;width:100%;border-radius:10px;padding:8px 12px;font-weight:600;font-size:.85rem;text-align:center;background:var(--sf);color:var(--mu)}.fs.ok{background:var(--okb);color:var(--ok)}.fs.bad{background:var(--badb);color:var(--bad)}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:.88rem;z-index:2100;max-width:90%}
 [hidden]{display:none!important}
 </style>
@@ -82,7 +83,8 @@ li span{display:block;color:var(--mu);font-size:.8rem}
     <div class="card"><div class="row">
       <div><label for="d1">Dari</label><input id="d1" type="date"></div>
       <div><label for="d2">Sampai</label><input id="d2" type="date"></div></div>
-      <button class="b" id="bRekap">Tampilkan rekap</button></div>
+      <button class="b" id="bRekap">Tampilkan rekap</button>
+      <button class="b2" id="bXls" style="margin-top:10px;width:100%" hidden>⬇ Unduh Excel (.xlsx)</button></div>
     <div class="card"><ul id="rekap"><li class="mu">Pilih tanggal lalu tampilkan rekap.</li></ul></div>
   </div>
 
@@ -112,6 +114,7 @@ li span{display:block;color:var(--mu);font-size:.8rem}
 
 <div id="cam" class="modal" hidden><video id="vid" autoplay playsinline muted></video>
   <div class="ci"><canvas id="mm" width="200" height="200"></canvas><div id="ct"></div></div>
+  <div id="fs" class="fs">Memuat pemeriksaan wajah…</div>
   <div class="row" style="max-width:360px;width:100%"><button class="b2" id="bBatal">Batal</button><button class="b" id="bSnap" style="margin:0">Ambil foto</button></div></div>
 <div id="prev" class="modal" hidden><div style="color:#fff;font-weight:600">Periksa foto sebelum dikirim</div><img id="pimg" alt="Pratinjau foto absen">
   <div class="row" style="max-width:360px;width:100%"><button class="b2" id="bUlang">Ulangi foto</button><button class="b" id="bKirim" style="margin:0">✓ Kirim absen</button></div>
@@ -148,12 +151,12 @@ $("bOut").onclick=function(){logout(false)};
 /* ---- start ---- */
 function start(){
   $("v-login").hidden=true;$("v-app").hidden=false;
-  $("hNama").textContent=S.user.nama;$("hPeran").textContent=(S.user.peran==="admin"?"Admin":"Karyawan")+" · NIK "+S.user.nik+" · v6";
+  $("hNama").textContent=S.user.nama;$("hPeran").textContent=(S.user.peran==="admin"?"Admin":"Karyawan")+" · NIK "+S.user.nik+" · v7";
   var tabs=[["absen","Absen"]];if(S.user.peran==="admin")tabs.push(["rekap","Rekap"],["kary","Karyawan"],["titik","Titik kantor"]);
   $("nav").innerHTML="";tabs.forEach(function(t){var b=document.createElement("button");b.textContent=t[1];b.dataset.k=t[0];b.onclick=function(){tab(t[0])};$("nav").appendChild(b)});
   $("nav").hidden=tabs.length<2;tab("absen");
   call("titik").then(function(j){S.titik=j.titik;var m=Number(j.maxAkurasi);S.maxAcc=m>=50?m:100;S.off=j.sekarang?Number(j.sekarang)-Date.now():0;drawMap();render()}).catch(fail);
-  riwayat();watch();
+  riwayat();watch();loadFace().catch(function(){});
 }
 function tab(k){["absen","rekap","kary","titik"].forEach(function(x){$("p-"+x).hidden=x!==k});
   Array.prototype.forEach.call($("nav").children,function(b){b.className=b.dataset.k===k?"on":""});
@@ -186,6 +189,34 @@ function render(){
   else{st.className="st bad";st.innerHTML="Anda di luar area absen<small>Dekati "+esc(n.t.nama)+" sejauh "+fm(n.d-n.t.radius)+" lagi.</small>"}
   btn.disabled=!(inside&&acc)}
 
+/* ---- deteksi wajah ---- */
+var FACE_URL="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js",FACE_MODEL="https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights";
+function loadFace(){
+  if(S.faceP)return S.faceP;
+  S.faceP=new Promise(function(res,rej){
+    function go(){faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL).then(res,rej)}
+    if(window.faceapi)return go();
+    var sc=document.createElement("script");sc.src=FACE_URL;sc.onload=go;sc.onerror=function(){rej(new Error("gagal"))};document.head.appendChild(sc)});
+  S.faceP.catch(function(){S.faceP=null});
+  return S.faceP}
+function cekWajah(el){
+  var W=el.videoWidth||el.width,H=el.videoHeight||el.height;
+  return faceapi.detectAllFaces(el,new faceapi.TinyFaceDetectorOptions({inputSize:320,scoreThreshold:.5})).then(function(f){
+    if(f.length!==1)return f.length>1?"banyak":"tidak";
+    var b=f[0].box,cx=(b.x+b.width/2)/W,cy=(b.y+b.height/2)/H;
+    if(b.width/W<.22)return"jauh";
+    if(cx<.2||cx>.8||cy<.1||cy>.9)return"tengah";
+    return"ok"})}
+var PESAN={ok:"✓ Wajah terdeteksi",tidak:"Wajah belum terdeteksi. Hadapkan wajah Anda ke kamera.",banyak:"Terdeteksi lebih dari satu wajah. Pastikan hanya Anda di depan kamera.",jauh:"Wajah terlalu jauh. Dekatkan wajah ke kamera.",tengah:"Posisikan wajah di tengah layar."};
+function mulaiDeteksi(){
+  var fs=$("fs"),btn=$("bSnap"),okn=0,busy=false;btn.disabled=true;fs.className="fs";fs.textContent="Memuat pemeriksaan wajah…";
+  loadFace().then(function(){
+    clearInterval(S.fd);
+    S.fd=setInterval(function(){
+      var v=$("vid");if(busy||!v.videoWidth||$("cam").hidden)return;busy=true;
+      cekWajah(v).then(function(h){okn=h==="ok"?okn+1:0;btn.disabled=okn<2;fs.className="fs "+(h==="ok"?"ok":"bad");fs.textContent=PESAN[h]}).catch(function(){}).then(function(){busy=false})},350)
+  }).catch(function(){fs.className="fs bad";fs.textContent="Pemeriksaan wajah gagal dimuat. Periksa internet, lalu buka kamera lagi."})}
+
 /* ---- absen dengan selfie ---- */
 function nearest(){var n=null;if(S.pos)S.titik.forEach(function(t){var d=hav(S.pos.lat,S.pos.lng,t.lat,t.lng);if(!n||d<n.d)n={t:t,d:d}});return n}
 function camInfo(){
@@ -199,9 +230,9 @@ function camInfo(){
 function openCam(){
   if(!navigator.mediaDevices){toast("Kamera tidak tersedia. Buka lewat HTTPS.");return}
   navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:640}},audio:false}).then(function(s){
-    S.stream=s;$("vid").srcObject=s;$("cam").hidden=false;camInfo()}).catch(function(){toast("Izin kamera diperlukan untuk absen.")})}
+    S.stream=s;$("vid").srcObject=s;$("cam").hidden=false;camInfo();mulaiDeteksi()}).catch(function(){toast("Izin kamera diperlukan untuk absen.")})}
 $("bAbsen").onclick=openCam;
-function stopCam(){if(S.stream){S.stream.getTracks().forEach(function(t){t.stop()});S.stream=null}$("cam").hidden=true}
+function stopCam(){clearInterval(S.fd);if(S.stream){S.stream.getTracks().forEach(function(t){t.stop()});S.stream=null}$("cam").hidden=true}
 $("bBatal").onclick=stopCam;
 
 /* ---- cap lokasi pada foto ---- */
@@ -233,13 +264,17 @@ function stamp(c,P){
     if(k<2&&ln)g.fillText(ln,x,y2);
     return c.toDataURL("image/jpeg",.78)})}
 $("bSnap").onclick=function(){
-  var v=$("vid");if(!v.videoWidth){toast("Kamera belum siap.");return}
+  var v=$("vid");if($("bSnap").disabled||!v.videoWidth){toast("Tunggu sampai wajah terdeteksi.");return}
   var w=640,h=Math.round(v.videoHeight*w/v.videoWidth),c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(v,0,0,w,h);
-  stopCam();toast("Mengambil lokasi…");
-  navigator.geolocation.getCurrentPosition(function(p){
-    var P={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy};toast("Menyiapkan foto…");
-    stamp(c,P).then(function(foto){S.pending={foto:foto,P:P,t:Date.now()};$("pimg").src=foto;$("prev").hidden=false;$("toast").hidden=true}).catch(fail)},
-    function(){toast("Lokasi tidak bisa diambil. Coba lagi.")},{enableHighAccuracy:true,timeout:15000,maximumAge:0})};
+  stopCam();toast("Memeriksa wajah…");
+  cekWajah(c).then(function(hasil){
+    if(hasil!=="ok"){toast(PESAN[hasil]+" Silakan ulangi foto.");openCam();return}
+    toast("Mengambil lokasi…");
+    navigator.geolocation.getCurrentPosition(function(p){
+      var P={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy};toast("Menyiapkan foto…");
+      stamp(c,P).then(function(foto){S.pending={foto:foto,P:P,t:Date.now()};$("pimg").src=foto;$("prev").hidden=false;$("toast").hidden=true}).catch(fail)},
+      function(){toast("Lokasi tidak bisa diambil. Coba lagi.")},{enableHighAccuracy:true,timeout:15000,maximumAge:0})
+  }).catch(function(){toast("Pemeriksaan wajah gagal. Coba lagi.");openCam()})};
 function tutupPrev(){S.pending=null;$("prev").hidden=true}
 $("bBatal2").onclick=tutupPrev;
 $("bUlang").onclick=function(){tutupPrev();openCam()};
@@ -254,11 +289,22 @@ function riwayat(){call("riwayatSaya").then(function(j){var u=$("riw");u.innerHT
 
 /* ---- admin: rekap ---- */
 var today=new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Jakarta"});$("d1").value=today;$("d2").value=today;
-$("bRekap").onclick=function(){call("rekapAbsensi",{dari:$("d1").value,sampai:$("d2").value}).then(function(j){var u=$("rekap");u.innerHTML=j.data.length?"":'<li class="mu">Tidak ada absen pada tanggal ini.</li>';
+$("bRekap").onclick=function(){call("rekapAbsensi",{dari:$("d1").value,sampai:$("d2").value}).then(function(j){S.rekapData=j.data;$("bXls").hidden=!j.data.length;if(j.data.length>=500)toast("Menampilkan 500 data terbaru. Persempit tanggal untuk data lengkap.");var u=$("rekap");u.innerHTML=j.data.length?"":'<li class="mu">Tidak ada absen pada tanggal ini.</li>';
   j.data.forEach(function(r){u.insertAdjacentHTML("beforeend","<li><div><b>"+esc(r.nama)+"</b> <span class='"+(r.jenis==="Masuk"?"in":"out")+"' style='display:inline'>"+esc(r.jenis)+"</span><span>"+esc(r.waktu)+" WIB · "+esc(r.jarak)+" m · <a href='https://www.google.com/maps?q="+esc(r.lat)+","+esc(r.lng)+"' target='_blank' rel='noopener'>peta</a></span></div><button class='b2' data-u='"+esc(r.foto)+"'>Foto</button></li>")});
   Array.prototype.forEach.call(u.querySelectorAll("button[data-u]"),function(b){b.onclick=function(){b.textContent="…";call("ambilFoto",{url:b.dataset.u}).then(function(j){$("img").src=j.gambar;$("pic").hidden=false}).catch(fail).then(function(){b.textContent="Foto"})}})}).catch(fail)};
 $("bTutup").onclick=function(){$("pic").hidden=true};
 
+/* ---- admin: unduh Excel ---- */
+function loadXlsx(){return window.XLSX?Promise.resolve():new Promise(function(res,rej){var sc=document.createElement("script");sc.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";sc.onload=res;sc.onerror=function(){rej(new Error("Pustaka Excel gagal dimuat. Periksa internet Anda."))};document.head.appendChild(sc)})}
+$("bXls").onclick=function(){
+  var D=S.rekapData||[];if(!D.length){toast("Belum ada data untuk diunduh.");return}
+  loadXlsx().then(function(){
+    var rows=D.map(function(r){return{"Waktu (WIB)":r.waktu,NIK:String(r.nik),Nama:r.nama,Jenis:r.jenis,"Titik":r.titik,"Jarak (m)":r.jarak,"Akurasi GPS (m)":r.akurasi,Latitude:r.lat,Longitude:r.lng,Status:r.status,"Link Foto":r.foto,"Link Peta":"https://www.google.com/maps?q="+r.lat+","+r.lng}});
+    var rg={};D.forEach(function(r){var o=rg[r.nik]=rg[r.nik]||{NIK:String(r.nik),Nama:r.nama,"Total Masuk":0,"Total Pulang":0};if(r.jenis==="Masuk")o["Total Masuk"]++;else o["Total Pulang"]++});
+    var a=XLSX.utils.json_to_sheet(rows),b=XLSX.utils.json_to_sheet(Object.keys(rg).map(function(k){return rg[k]})),wb=XLSX.utils.book_new();
+    a["!cols"]=[22,18,24,9,10,10,14,12,12,12,48,48].map(function(w){return{wch:w}});b["!cols"]=[18,26,13,13].map(function(w){return{wch:w}});
+    XLSX.utils.book_append_sheet(wb,a,"Absensi");XLSX.utils.book_append_sheet(wb,b,"Ringkasan");
+    XLSX.writeFile(wb,"absensi_"+$("d1").value+"_sd_"+$("d2").value+".xlsx");toast("File Excel diunduh.")}).catch(fail)};
 /* ---- admin: karyawan ---- */
 function listKary(){call("titik").then(function(j){$("kt").innerHTML='<option value="SEMUA">Semua titik</option>'+j.titik.map(function(t){return'<option value="'+esc(t.id)+'">'+esc(t.nama)+"</option>"}).join("")}).catch(function(){});
   call("daftarKaryawan").then(function(j){var u=$("kl");u.innerHTML="";j.karyawan.forEach(function(k){
